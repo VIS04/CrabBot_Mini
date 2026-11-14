@@ -11,26 +11,19 @@
 enum CrabBotMode {
     //% block="stand"
     Stand = 0,
-    //% block="walk forward"
-    WalkForward = 1,
-    //% block="walk backward"
-    WalkBackward = 2,
-    //% block="turn left"
-    TurnLeft = 3,
-    //% block="turn right"
-    TurnRight = 4,
-    //% block="spin left"
-    SpinLeft = 5,
-    //% block="spin right"
-    SpinRight = 6,
-    //% block="wave"
-    Wave = 7,
-    //% block="dance"
-    Dance = 8,
+    //% block="run"
+    Run = 1,
     //% block="self balance"
-    SelfBalance = 9,
+    SelfBalance = 2,
     //% block="stop"
-    Stop = 10
+    Stop = 3
+}
+
+enum CrabBotWalk {
+    //% block="forward"
+    Forward = 1,
+    //% block="backward"
+    Backward = -1
 }
 
 enum CrabBotTurn {
@@ -186,9 +179,21 @@ namespace CrabBotMini {
     let isLeveling = false;
     let inGaitStance = false;
 
+    const ACTION_NONE = 0;
+    const ACTION_WALK_FWD = 1;
+    const ACTION_WALK_BWD = 2;
+    const ACTION_TURN_LEFT = 3;
+    const ACTION_TURN_RIGHT = 4;
+    const ACTION_SPIN_LEFT = 5;
+    const ACTION_SPIN_RIGHT = 6;
+    const ACTION_WAVE = 7;
+    const ACTION_DANCE = 8;
+
     let activeMode: CrabBotMode = CrabBotMode.Stand;
     let pendingMode: CrabBotMode = CrabBotMode.Stand;
     let hasPendingMode = false;
+    let pendingAction = ACTION_NONE;
+    let hasPendingAction = false;
     let modeEndTimeMs = 0;
 
     let actionToken = 0;
@@ -976,22 +981,22 @@ namespace CrabBotMini {
     }
 
     // --------------------------------------------------------------
-    // Single-Fiber Mode Dispatcher
+    // Single-Fiber Mode & Action Dispatcher
     // --------------------------------------------------------------
 
-    function configureGaitForMode(mode: CrabBotMode): void {
+    function configureGaitForAction(action: number): void {
         applySpeed(currentSpeed);
-        if (mode == CrabBotMode.WalkForward) {
+        if (action == ACTION_WALK_FWD) {
             setLegAmplitude(LEG_FL, SWING_AMP);
             setLegAmplitude(LEG_RL, SWING_AMP);
             setLegAmplitude(LEG_FR, SWING_AMP);
             setLegAmplitude(LEG_RR, SWING_AMP);
-        } else if (mode == CrabBotMode.WalkBackward) {
+        } else if (action == ACTION_WALK_BWD) {
             setLegAmplitude(LEG_FL, -SWING_AMP);
             setLegAmplitude(LEG_RL, -SWING_AMP);
             setLegAmplitude(LEG_FR, -SWING_AMP);
             setLegAmplitude(LEG_RR, -SWING_AMP);
-        } else if (mode == CrabBotMode.TurnLeft) {
+        } else if (action == ACTION_TURN_LEFT) {
             const k = clampVal(absVal(currentTurnPct), 0, MAX_TURN_PCT);
             const aLeft = Math.idiv(SWING_AMP * (100 - k), 100);
             const aRight = Math.idiv(SWING_AMP * (100 + k), 100);
@@ -999,7 +1004,7 @@ namespace CrabBotMini {
             setLegAmplitude(LEG_RL, aLeft);
             setLegAmplitude(LEG_FR, aRight);
             setLegAmplitude(LEG_RR, aRight);
-        } else if (mode == CrabBotMode.TurnRight) {
+        } else if (action == ACTION_TURN_RIGHT) {
             const k = -clampVal(absVal(currentTurnPct), 0, MAX_TURN_PCT);
             const aLeft = Math.idiv(SWING_AMP * (100 - k), 100);
             const aRight = Math.idiv(SWING_AMP * (100 + k), 100);
@@ -1007,12 +1012,12 @@ namespace CrabBotMini {
             setLegAmplitude(LEG_RL, aLeft);
             setLegAmplitude(LEG_FR, aRight);
             setLegAmplitude(LEG_RR, aRight);
-        } else if (mode == CrabBotMode.SpinLeft) {
+        } else if (action == ACTION_SPIN_LEFT) {
             setLegAmplitude(LEG_FL, -SWING_AMP);
             setLegAmplitude(LEG_RL, -SWING_AMP);
             setLegAmplitude(LEG_FR, SWING_AMP);
             setLegAmplitude(LEG_RR, SWING_AMP);
-        } else if (mode == CrabBotMode.SpinRight) {
+        } else if (action == ACTION_SPIN_RIGHT) {
             setLegAmplitude(LEG_FL, SWING_AMP);
             setLegAmplitude(LEG_RL, SWING_AMP);
             setLegAmplitude(LEG_FR, -SWING_AMP);
@@ -1032,50 +1037,11 @@ namespace CrabBotMini {
                 if (hasPendingMode) {
                     hasPendingMode = false;
                     const mode = pendingMode;
-                    activeMode = mode;
                     activeToken = actionToken;
 
-                    if (mode == CrabBotMode.Stand || mode == CrabBotMode.Stop) {
+                    if (mode == CrabBotMode.Stand || mode == CrabBotMode.Stop || mode == CrabBotMode.Run) {
                         if (recoverToStance() && !isCancelled()) {
                             enterStand();
-                        }
-                        activeMode = CrabBotMode.Stand;
-                    } else if (
-                        mode == CrabBotMode.WalkForward ||
-                        mode == CrabBotMode.WalkBackward ||
-                        mode == CrabBotMode.TurnLeft ||
-                        mode == CrabBotMode.TurnRight ||
-                        mode == CrabBotMode.SpinLeft ||
-                        mode == CrabBotMode.SpinRight
-                    ) {
-                        if (recoverToStance() && !isCancelled()) {
-                            isWalking = true;
-                            configureGaitForMode(mode);
-                            while (isWalking && !isCancelled() && !modeIsTimedOut()) {
-                                runCrawlGaitCycle();
-                            }
-                            isWalking = false;
-                            if (!isCancelled() && modeIsTimedOut()) {
-                                modeEndTimeMs = 0;
-                                if (recoverToStance() && !isCancelled()) {
-                                    enterStand();
-                                }
-                                activeMode = CrabBotMode.Stand;
-                            }
-                        }
-                    } else if (mode == CrabBotMode.Wave) {
-                        if (recoverToStance() && !isCancelled()) {
-                            runWave();
-                        }
-                        if (!isCancelled()) {
-                            activeMode = CrabBotMode.Stand;
-                        }
-                    } else if (mode == CrabBotMode.Dance) {
-                        if (recoverToStance() && !isCancelled()) {
-                            runDance();
-                        }
-                        if (!isCancelled()) {
-                            activeMode = CrabBotMode.Stand;
                         }
                     } else if (mode == CrabBotMode.SelfBalance) {
                         if (recoverToStance() && !isCancelled()) {
@@ -1087,6 +1053,46 @@ namespace CrabBotMini {
                             activeMode = CrabBotMode.Stand;
                         }
                     }
+                } else if (hasPendingAction) {
+                    hasPendingAction = false;
+                    const action = pendingAction;
+                    activeToken = actionToken;
+
+                    if (activeMode != CrabBotMode.Run) {
+                        continue;
+                    }
+
+                    if (
+                        action == ACTION_WALK_FWD ||
+                        action == ACTION_WALK_BWD ||
+                        action == ACTION_TURN_LEFT ||
+                        action == ACTION_TURN_RIGHT ||
+                        action == ACTION_SPIN_LEFT ||
+                        action == ACTION_SPIN_RIGHT
+                    ) {
+                        if (recoverToStance() && !isCancelled()) {
+                            isWalking = true;
+                            configureGaitForAction(action);
+                            while (isWalking && !isCancelled() && !modeIsTimedOut()) {
+                                runCrawlGaitCycle();
+                            }
+                            isWalking = false;
+                            if (!isCancelled()) {
+                                modeEndTimeMs = 0;
+                                if (recoverToStance() && !isCancelled()) {
+                                    enterStand();
+                                }
+                            }
+                        }
+                    } else if (action == ACTION_WAVE) {
+                        if (recoverToStance() && !isCancelled()) {
+                            runWave();
+                        }
+                    } else if (action == ACTION_DANCE) {
+                        if (recoverToStance() && !isCancelled()) {
+                            runDance();
+                        }
+                    }
                 } else {
                     basic.pause(20);
                 }
@@ -1094,15 +1100,31 @@ namespace CrabBotMini {
         });
     }
 
-    function queueMode(mode: CrabBotMode, durationMs: number): void {
+    function queueMode(mode: CrabBotMode): void {
         ensureDispatcher();
         actionToken += 1;
         isWalking = false;
         isDancing = false;
         isLeveling = false;
-        modeEndTimeMs = durationMs > 0 ? input.runningTime() + durationMs : 0;
+        hasPendingAction = false;
+        pendingAction = ACTION_NONE;
+        modeEndTimeMs = 0;
+        activeMode = mode;
         pendingMode = mode;
         hasPendingMode = true;
+    }
+
+    function queueRunAction(action: number, durationMs: number): void {
+        if (activeMode != CrabBotMode.Run) return;
+        ensureDispatcher();
+        actionToken += 1;
+        isWalking = false;
+        isDancing = false;
+        isLeveling = false;
+        hasPendingMode = false;
+        modeEndTimeMs = durationMs > 0 ? input.runningTime() + durationMs : 0;
+        pendingAction = action;
+        hasPendingAction = true;
     }
 
     // --------------------------------------------------------------
@@ -1110,24 +1132,25 @@ namespace CrabBotMini {
     // --------------------------------------------------------------
 
     /**
-     * Switch CrabBot Mini to a selectable action mode.
+     * Switch CrabBot Mini operating mode (Stand, Run, Self Balance, or Stop).
      */
     //% blockId=CrabBotMini_setMode block="CrabBot set mode %mode"
     //% weight=100
     //% blockGap=10
     export function setMode(mode: CrabBotMode): void {
-        queueMode(mode, 0);
+        queueMode(mode);
     }
 
     /**
-     * Run a selectable CrabBot Mini mode for a duration in milliseconds, then return to stand.
+     * Walk forward or backward for the specified duration in milliseconds (requires Run mode).
      */
-    //% blockId=CrabBotMini_runModeFor block="CrabBot run mode %mode|for %durationMs ms"
+    //% blockId=CrabBotMini_walk block="CrabBot walk %direction|for %durationMs ms"
     //% weight=95
     //% durationMs.defl=3000 durationMs.min=200 durationMs.max=60000
     //% blockGap=10
-    export function runModeFor(mode: CrabBotMode, durationMs: number): void {
-        queueMode(mode, durationMs);
+    export function walk(direction: CrabBotWalk, durationMs: number): void {
+        if (durationMs <= 0) return;
+        queueRunAction(direction == CrabBotWalk.Forward ? ACTION_WALK_FWD : ACTION_WALK_BWD, durationMs);
     }
 
     /**
@@ -1142,47 +1165,51 @@ namespace CrabBotMini {
     }
 
     /**
-     * Turn while walking forward using differential stride strength (0 to 70%).
+     * Turn while walking forward for the specified duration in milliseconds (requires Run mode).
      */
-    //% blockId=CrabBotMini_turn block="CrabBot turn %direction|strength %strengthPct \\%"
+    //% blockId=CrabBotMini_turn block="CrabBot turn %direction|strength %strengthPct \\%|for %durationMs ms"
     //% weight=85
     //% strengthPct.min=0 strengthPct.max=70 strengthPct.defl=40
+    //% durationMs.defl=3000 durationMs.min=200 durationMs.max=60000
     //% blockGap=10
-    export function turn(direction: CrabBotTurn, strengthPct: number): void {
+    export function turn(direction: CrabBotTurn, strengthPct: number, durationMs: number): void {
+        if (durationMs <= 0) return;
         currentTurnPct = clampVal(absVal(strengthPct), 0, MAX_TURN_PCT);
-        queueMode(direction == CrabBotTurn.Left ? CrabBotMode.TurnLeft : CrabBotMode.TurnRight, 0);
+        queueRunAction(direction == CrabBotTurn.Left ? ACTION_TURN_LEFT : ACTION_TURN_RIGHT, durationMs);
     }
 
     /**
-     * Spin in place left or right at the given speed (1..10).
+     * Spin in place left or right for the specified duration in milliseconds (requires Run mode).
      */
-    //% blockId=CrabBotMini_turnInPlace block="CrabBot spin %direction|speed %speed"
+    //% blockId=CrabBotMini_spin block="CrabBot spin %direction|speed %speed|for %durationMs ms"
     //% weight=80
     //% speed.min=1 speed.max=10 speed.defl=5
+    //% durationMs.defl=3000 durationMs.min=200 durationMs.max=60000
     //% blockGap=10
-    export function turnInPlace(direction: CrabBotTurn, speed: number): void {
+    export function spin(direction: CrabBotTurn, speed: number, durationMs: number): void {
+        if (durationMs <= 0) return;
         applySpeed(speed);
-        queueMode(direction == CrabBotTurn.Left ? CrabBotMode.SpinLeft : CrabBotMode.SpinRight, 0);
+        queueRunAction(direction == CrabBotTurn.Left ? ACTION_SPIN_LEFT : ACTION_SPIN_RIGHT, durationMs);
     }
 
     /**
-     * Return CrabBot Mini to neutral standing X-stance.
+     * Perform a friendly front-right leg wave (requires Run mode).
      */
-    //% blockId=CrabBotMini_stand block="CrabBot stand"
+    //% blockId=CrabBotMini_wave block="CrabBot wave"
     //% weight=75
     //% blockGap=10
-    export function stand(): void {
-        queueMode(CrabBotMode.Stand, 0);
+    export function wave(): void {
+        queueRunAction(ACTION_WAVE, 0);
     }
 
     /**
-     * Stop any active CrabBot Mini movement and recover safely to standing stance.
+     * Perform the 4-leg happy dance routine (requires Run mode).
      */
-    //% blockId=CrabBotMini_stop block="CrabBot stop"
+    //% blockId=CrabBotMini_dance block="CrabBot dance"
     //% weight=70
     //% blockGap=10
-    export function stop(): void {
-        queueMode(CrabBotMode.Stop, 0);
+    export function dance(): void {
+        queueRunAction(ACTION_DANCE, 0);
     }
 
     /**

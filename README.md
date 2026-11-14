@@ -2,18 +2,21 @@
 
 MakeCode extension for the **CrabBot Mini** 8-DOF quadruped robot (standalone, with built-in PCA9685 servo driver).
 
-## Features & Selectable Modes
+## Modes & Actions
 
-Use `CrabBotMini.setMode(...)` (or `CrabBotMini.runModeFor(...)`) to switch cleanly between modes without servo or I2C collisions:
-
+### 1. Operating Modes (`CrabBotMini.setMode(...)`)
 - **Stand** — Neutral 30° X-stance
-- **Walk Forward / Walk Backward** — Smooth 4-phase crawl gait
-- **Turn Left / Turn Right** — Differential stride turning
-- **Spin Left / Spin Right** — Turn in place
-- **Wave** — Tripod-balanced front-right leg wave
-- **Dance** — 4-leg sine/cubic dance + body groove + celebration pose
+- **Run** — Active command mode for movement & action blocks
 - **Self Balance** — Closed-loop accelerometer pitch & roll leveling
 - **Stop** — Interrupts any active motion and recovers safely to neutral stance
+
+### 2. Run-Mode Actions (Timed)
+When in **Run** mode, use these blocks (timed movements return to neutral stance when complete):
+- **`CrabBotMini.walk(direction, durationMs)`** — Walk forward or backward for the specified duration
+- **`CrabBotMini.turn(direction, strengthPct, durationMs)`** — Differential stride turn left or right for the specified duration
+- **`CrabBotMini.spin(direction, speed, durationMs)`** — Spin in place left or right for the specified duration
+- **`CrabBotMini.wave()`** — Tripod-balanced front-right leg wave
+- **`CrabBotMini.dance()`** — 4-leg sine/cubic dance + body groove + celebration pose
 
 ## Hardware Pinout (Servo Headers S1–S8)
 
